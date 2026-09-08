@@ -15,6 +15,7 @@ class CorsMiddleware
         $allowedOrigins = [
             'https://parafa.com.br',
             'https://www.parafa.com.br',
+            'https://api.parafa.com.br',   // API subdomain
             'http://localhost:3000',     // Frontend dev
             'http://127.0.0.1:3000',    // Frontend dev
             'http://172.17.0.1:3000',   // Docker frontend
