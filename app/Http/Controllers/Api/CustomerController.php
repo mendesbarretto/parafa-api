@@ -22,7 +22,8 @@ class CustomerController extends Controller
                 'hide_address', 'site', 'email', 'category_id', 'city_id', 'url', 'status',
             ])
                 ->with(['category:id,name,url,department_id', 'category.department:id,name,url', 'phones'])
-                ->where('status', '1');
+                ->where('status', '1')
+                ->orderBy('id', 'desc');
 
             if ($request->has('category_id')) {
                 $query->where('category_id', $request->category_id);
@@ -33,7 +34,7 @@ class CustomerController extends Controller
             }
 
             if ($request->has('state')) {
-                $query->where('state', $request->state);
+                $query->where('state', strtoupper($request->state));
             }
 
             if ($request->has('search')) {
@@ -44,14 +45,20 @@ class CustomerController extends Controller
                 });
             }
 
-            $perPage = min($request->get('per_page', 5), 20);
-            $customers = $query->orderBy('id', 'desc')->limit($perPage)->get();
+            $perPage = min($request->get('per_page', 20), 50);
+            $page = $request->get('page', 1);
+
+            $customers = $query->paginate($perPage, ['*'], 'page', $page);
 
             return response()->json([
                 'data' => $customers->map(fn (Customer $customer) => $this->formatCustomer($customer)),
                 'meta' => [
-                    'per_page' => $perPage,
-                    'total' => $customers->count(),
+                    'current_page' => $customers->currentPage(),
+                    'per_page' => $customers->perPage(),
+                    'total' => $customers->total(),
+                    'last_page' => $customers->lastPage(),
+                    'from' => $customers->firstItem(),
+                    'to' => $customers->lastItem(),
                 ],
             ]);
         } catch (\Exception $e) {
