@@ -16,37 +16,52 @@ class CustomerController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
+            $validated = $request->validate([
+                'category_id' => 'sometimes|integer',
+                'city_id' => 'sometimes|string|max:100',
+                'state' => 'sometimes|string|size:2',
+                'search' => 'sometimes|string|max:100',
+                'per_page' => 'sometimes|integer|min:1|max:50',
+                'page' => 'sometimes|integer|min:1',
+            ]);
+
             $query = Customer::select([
                 'id', 'name', 'slogan', 'description', 'title_address', 'patent_address',
                 'address', 'number', 'complement', 'neighborhood', 'zipcode', 'city', 'state',
                 'hide_address', 'site', 'email', 'category_id', 'city_id', 'url', 'status',
             ])
-                ->with(['category:id,name,url,department_id', 'category.department:id,name,url', 'phones'])
+                ->with([
+                    'category:id,name,url,department_id',
+                    'category.department:id,name,url',
+                    'phones:customer_id,type,ddd,phone',
+                ])
                 ->where('status', '1')
                 ->orderBy('id', 'desc');
 
-            if ($request->has('category_id')) {
-                $query->where('category_id', $request->category_id);
+            if (isset($validated['category_id'])) {
+                $query->where('category_id', $validated['category_id']);
             }
 
-            if ($request->has('city_id')) {
-                $query->where('city_id', $request->city_id);
+            if (isset($validated['city_id'])) {
+                $query->where('city_id', $validated['city_id']);
             }
 
-            if ($request->has('state')) {
-                $query->where('state', strtoupper($request->state));
+            if (isset($validated['state'])) {
+                $query->where('state', strtoupper($validated['state']));
             }
 
-            if ($request->has('search')) {
-                $search = $request->search;
+            if (isset($validated['search'])) {
+                $search = $validated['search'];
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'ilike', "%{$search}%")
-                        ->orWhere('description', 'ilike', "%{$search}%");
+                        ->orWhere('description', 'ilike', "%{$search}%")
+                        ->orWhere('neighborhood', 'ilike', "%{$search}%")
+                        ->orWhere('city', 'ilike', "%{$search}%");
                 });
             }
 
-            $perPage = min($request->get('per_page', 20), 50);
-            $page = $request->get('page', 1);
+            $perPage = $validated['per_page'] ?? 20;
+            $page = $validated['page'] ?? 1;
 
             $customers = $query->paginate($perPage, ['*'], 'page', $page);
 
