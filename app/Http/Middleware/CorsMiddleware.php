@@ -28,6 +28,7 @@ class CorsMiddleware
             '172.17.0.1',  // Docker frontend
             '172.18.0.1',  // Docker networks
             '172.19.0.1',
+            '192.168.1.30', // Host LAN IP
             '147.182.248.223', // Servidor
         ];
 
@@ -37,7 +38,7 @@ class CorsMiddleware
         ];
 
         // Em desenvolvimento, liberar tudo
-        if (app()->environment(['local', 'dev'])) {
+        if (app()->environment(['local', 'dev', 'development'])) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
         } else {
             // Validação rigorosa em produção

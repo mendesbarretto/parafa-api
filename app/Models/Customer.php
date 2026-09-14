@@ -15,8 +15,8 @@ class Customer extends Model
     public $incrementing = false;
 
     protected $fillable = [
-        'name', 'slogan', 'description', 'address', 'number', 'complement',
-        'neighborhood', 'zipcode', 'city', 'state', 'site', 'email',
+        'name', 'slogan', 'description', 'title_address', 'patent_address', 'hide_address',
+        'address', 'number', 'complement', 'neighborhood', 'zipcode', 'city', 'state', 'site', 'email',
         'category_id', 'city_id', 'status', 'url', 'facebook', 'twitter', 'instagram'
     ];
 
@@ -34,6 +34,11 @@ class Customer extends Model
     public function city()
     {
         return $this->belongsTo(City::class, 'city_id');
+    }
+
+    public function phones()
+    {
+        return $this->hasMany(CustomerPhone::class, 'customer_id', 'id');
     }
 
     public function scopeActive($query)

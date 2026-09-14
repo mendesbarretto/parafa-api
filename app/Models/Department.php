@@ -9,7 +9,7 @@ class Department extends Model
     protected $table = 'departments';
 
     protected $fillable = [
-        'name'
+        'name', 'url',
     ];
 
     public function categories()

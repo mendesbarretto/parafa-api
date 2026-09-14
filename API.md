@@ -75,7 +75,21 @@ GET /api/empresas/{id}
   "category_id": 7527,
   "city_id": "41000",
   "url": "/curitiba-pr/bares-e-restaurantes/restaurantes/999999/kilo-grill-comercio-de-alimentos-ltda-me",
-  "status": "1"
+  "status": "1",
+  "category_name": "Restaurantes",
+  "category_url": "restaurantes",
+  "department_name": "Bares e Restaurantes",
+  "department_url": "bares-e-restaurantes",
+  "phones": [
+    {
+      "type": 1,
+      "ddd": "41",
+      "phone": "3263-1223",
+      "display": "(041) 3263-1223",
+      "tel": "4132631223",
+      "whatsapp_url": null
+    }
+  ]
 }
 ```
 
