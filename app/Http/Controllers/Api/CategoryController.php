@@ -30,12 +30,16 @@ class CategoryController extends Controller
     public function show(string $id): JsonResponse
     {
         try {
-            $category = Category::select('id', 'name', 'url', 'department_id')
-                ->withCount('customers')
-                ->where(function ($query) use ($id) {
-                    $query->where('id', $id)->orWhere('url', $id);
-                })
-                ->firstOrFail();
+            $query = Category::select('id', 'name', 'url', 'department_id')
+                ->withCount('customers');
+
+            if (ctype_digit($id)) {
+                $query->where('id', $id);
+            } else {
+                $query->where('url', $id);
+            }
+
+            $category = $query->firstOrFail();
 
             return response()->json($category);
         } catch (\Exception $e) {
