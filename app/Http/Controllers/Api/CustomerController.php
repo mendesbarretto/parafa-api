@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\City;
 use App\Models\Customer;
 use App\Models\CustomerPhone;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class CustomerController extends Controller
                 'category_id' => 'sometimes|integer',
                 'city_id' => 'sometimes|string|max:100',
                 'city' => 'sometimes|string|max:100',
+                'city_url' => 'sometimes|string|max:100',
                 'state' => 'sometimes|string|size:2',
                 'department_url' => 'sometimes|string|max:100',
                 'include_inactive' => 'sometimes|boolean',
@@ -54,6 +56,22 @@ class CustomerController extends Controller
 
             if (isset($validated['city'])) {
                 $query->whereRaw('LOWER(TRIM(city)) = LOWER(TRIM(?))', [$validated['city']]);
+            }
+
+            if (isset($validated['city_url'])) {
+                $cityQuery = City::where('url', $validated['city_url']);
+
+                if (isset($validated['state'])) {
+                    $cityQuery->where('state', strtoupper($validated['state']));
+                }
+
+                $cityId = $cityQuery->value('id');
+
+                if ($cityId === null) {
+                    $query->whereRaw('1 = 0');
+                } else {
+                    $query->where('city_id', $cityId);
+                }
             }
 
             if (isset($validated['state'])) {
