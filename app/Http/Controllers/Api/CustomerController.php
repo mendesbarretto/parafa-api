@@ -115,7 +115,6 @@ class CustomerController extends Controller
     {
         try {
             $customer = Customer::with(['category.department', 'phones'])
-                ->where('status', '1')
                 ->findOrFail($id);
 
             return response()->json($this->formatCustomer($customer, detailed: true));
