@@ -19,7 +19,10 @@ class CustomerController extends Controller
             $validated = $request->validate([
                 'category_id' => 'sometimes|integer',
                 'city_id' => 'sometimes|string|max:100',
+                'city' => 'sometimes|string|max:100',
                 'state' => 'sometimes|string|size:2',
+                'department_url' => 'sometimes|string|max:100',
+                'include_inactive' => 'sometimes|boolean',
                 'search' => 'sometimes|string|max:100',
                 'per_page' => 'sometimes|integer|min:1|max:50',
                 'page' => 'sometimes|integer|min:1',
@@ -35,8 +38,11 @@ class CustomerController extends Controller
                     'category.department:id,name,url',
                     'phones:customer_id,type,ddd,phone',
                 ])
-                ->where('status', '1')
                 ->orderBy('id', 'desc');
+
+            if (!($validated['include_inactive'] ?? false)) {
+                $query->where('status', '1');
+            }
 
             if (isset($validated['category_id'])) {
                 $query->where('category_id', $validated['category_id']);
@@ -46,8 +52,18 @@ class CustomerController extends Controller
                 $query->where('city_id', $validated['city_id']);
             }
 
+            if (isset($validated['city'])) {
+                $query->whereRaw('LOWER(TRIM(city)) = LOWER(TRIM(?))', [$validated['city']]);
+            }
+
             if (isset($validated['state'])) {
                 $query->where('state', strtoupper($validated['state']));
+            }
+
+            if (isset($validated['department_url'])) {
+                $query->whereHas('category.department', function ($departmentQuery) use ($validated) {
+                    $departmentQuery->where('url', $validated['department_url']);
+                });
             }
 
             if (isset($validated['search'])) {
