@@ -1,10 +1,10 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CityController;
 use App\Http\Controllers\Api\CnpjController;
-use App\Http\Controllers\Api\CustomerController;
-use Illuminate\Support\Facades\Route;
 
 Route::middleware('api')->group(function () {
     // Empresas (Customers)
@@ -23,7 +23,7 @@ Route::middleware('api')->group(function () {
     Route::get('/cidades/{id}', [CityController::class, 'show']);
     Route::get('/estados', [CityController::class, 'states']);
 
-    Route::prefix('cnpj')->group(function () {
+    Route::prefix('cnpj')->middleware('throttle:30,1')->group(function () {
         Route::get('/companies', [CnpjController::class, 'companies']);
         Route::get('/companies/{cnpj}', [CnpjController::class, 'company']);
         Route::get('/cities/{citySlug}', [CnpjController::class, 'city']);
