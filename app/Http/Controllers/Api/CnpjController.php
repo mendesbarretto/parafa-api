@@ -58,7 +58,18 @@ class CnpjController extends Controller
             ->where('cnpj', $cnpj)
             ->firstOrFail();
 
-        return response()->json(['data' => $company]);
+        $related = CompanyPg::query()
+            ->select(['id', 'url', 'name', 'fantasy', 'cnpj', 'city', 'state'])
+            ->where('city_id', $company->city_id)
+            ->where('id', '!=', $company->id)
+            ->orderBy('id')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'data' => $company,
+            'related' => $related,
+        ]);
     }
 
     public function city(string $citySlug, Request $request): JsonResponse
