@@ -68,11 +68,13 @@ class CnpjController extends Controller
         $city = CityPg::where('url', $cityUrl)->where('state', $state)->firstOrFail();
         $after = $request->integer('after', 0);
 
+        $cityId = (int) $city->id;
+
         $query = CompanyPg::query()->select([
             'id', 'url', 'name', 'fantasy', 'cnpj', 'street', 'number',
             'complement', 'neighborhood', 'zip_code', 'city', 'state',
             'opening', 'activities', 'situation',
-        ])->whereRaw('city_id::text = ?', [(string) $city->id])
+        ])->where('city_id', $cityId)
             ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
             ->orderBy('id')
             ->limit(10)
