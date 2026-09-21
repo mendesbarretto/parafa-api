@@ -45,7 +45,7 @@ class CorsMiddleware
         $apiKey = $request->header('X-API-Key');
 
         // Em desenvolvimento ou Docker interno, liberar tudo
-        if (app()->environment(['local', 'dev', 'development']) || in_array($clientIp, ['172.23.0.1', '172.23.0.3'])) {
+        if (app()->environment(['local', 'dev', 'development']) || in_array($clientIp, ['172.23.0.1', '172.23.0.2', '172.23.0.3'])) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
         } else {
 
