@@ -63,7 +63,7 @@ class CnpjController extends Controller
             ->where('city_id', $company->city_id)
             ->where('id', '!=', $company->id)
             ->orderBy('id')
-            ->limit(50)
+            ->limit(12)
             ->get();
 
         return response()->json([
