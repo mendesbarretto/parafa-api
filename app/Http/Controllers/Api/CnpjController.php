@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CityPg;
 use App\Models\CompanyPg;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CnpjController extends Controller
 {
@@ -22,89 +22,107 @@ class CnpjController extends Controller
             'page' => 'sometimes|integer|min:1',
         ]);
 
-        $query = CompanyPg::query()->select([
-            'id', 'url', 'name', 'fantasy', 'cnpj', 'street', 'number',
-            'complement', 'neighborhood', 'zip_code', 'city', 'state',
-            'opening', 'activities', 'situation',
-        ])->orderByDesc('id');
+        $cacheKey = 'cnpj:companies:'.md5(json_encode($validated));
 
-        if (isset($validated['search'])) {
-            $search = trim($validated['search']);
-            $cnpj = preg_replace('/\D/', '', $search);
+        $result = Cache::remember($cacheKey, now()->addHours(12), function () use ($validated) {
+            $query = CompanyPg::query()->select([
+                'id', 'url', 'name', 'fantasy', 'cnpj', 'street', 'number',
+                'complement', 'neighborhood', 'zip_code', 'city', 'state',
+                'opening', 'activities', 'situation',
+            ])->orderByDesc('id');
 
-            if (strlen($cnpj) === 14) {
-                $query->where('cnpj', $cnpj);
-            } else {
-                $query->where(function ($companyQuery) use ($search) {
-                    $companyQuery->where('name', 'ilike', "%{$search}%")
-                        ->orWhere('fantasy', 'ilike', "%{$search}%");
-                });
+            if (isset($validated['search'])) {
+                $search = trim($validated['search']);
+                $cnpj = preg_replace('/\D/', '', $search);
+
+                if (strlen($cnpj) === 14) {
+                    $query->where('cnpj', $cnpj);
+                } else {
+                    $query->where(function ($companyQuery) use ($search) {
+                        $companyQuery->where('name', 'ilike', "%{$search}%")
+                            ->orWhere('fantasy', 'ilike', "%{$search}%");
+                    });
+                }
             }
-        }
 
-        $query->when(isset($validated['city']), fn ($q) => $q->where('city', 'ilike', $validated['city']))
-            ->when(isset($validated['state']), fn ($q) => $q->where('state', strtoupper($validated['state'])))
-            ->when(isset($validated['city_id']), fn ($q) => $q->where('city_id', $validated['city_id']));
+            $query->when(isset($validated['city']), fn ($q) => $q->where('city', 'ilike', $validated['city']))
+                ->when(isset($validated['state']), fn ($q) => $q->where('state', strtoupper($validated['state'])))
+                ->when(isset($validated['city_id']), fn ($q) => $q->where('city_id', $validated['city_id']));
 
-        $companies = $query->simplePaginate($validated['per_page'] ?? 20);
+            $companies = $query->simplePaginate($validated['per_page'] ?? 20);
 
-        return response()->json([
-            'data' => $companies->items(),
-            'meta' => [
-                'current_page' => $companies->currentPage(),
-                'per_page' => $companies->perPage(),
-                'has_more_pages' => $companies->hasMorePages(),
-            ],
-        ]);
+            return [
+                'data' => $companies->items(),
+                'meta' => [
+                    'current_page' => $companies->currentPage(),
+                    'per_page' => $companies->perPage(),
+                    'has_more_pages' => $companies->hasMorePages(),
+                ],
+            ];
+        });
+
+        return $this->cachedJson($result, 43200);
     }
 
     public function company(string $cnpj): JsonResponse
     {
-        $company = CompanyPg::with(['legalNature', 'activity'])
-            ->where('cnpj', $cnpj)
-            ->firstOrFail();
+        $cacheKey = "cnpj:company:{$cnpj}";
 
-        $related = CompanyPg::query()
-            ->select(['id', 'url', 'name', 'fantasy', 'cnpj', 'city', 'state'])
-            ->where('city_id', $company->city_id)
-            ->where('id', '!=', $company->id)
-            ->orderBy('id')
-            ->limit(12)
-            ->get();
+        $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cnpj) {
+            $company = CompanyPg::with(['legalNature', 'activity'])
+                ->where('cnpj', $cnpj)
+                ->firstOrFail();
 
-        return response()->json([
-            'data' => $company,
-            'related' => $related,
-        ]);
+            $related = CompanyPg::query()
+                ->select(['id', 'url', 'name', 'fantasy', 'cnpj', 'city', 'state'])
+                ->where('city_id', $company->city_id)
+                ->where('id', '!=', $company->id)
+                ->orderBy('id')
+                ->limit(12)
+                ->get();
+
+            return [
+                'data' => $company,
+                'related' => $related,
+            ];
+        });
+
+        return $this->cachedJson($result, 86400);
     }
 
     public function city(string $citySlug, Request $request): JsonResponse
     {
         $state = strtoupper(substr($citySlug, -2));
         $cityUrl = substr($citySlug, 0, -3);
-        $city = CityPg::where('url', $cityUrl)->where('state', $state)->firstOrFail();
         $after = $request->integer('after', 0);
 
-        $cityId = (int) $city->id;
+        $cacheKey = "cnpj:city:{$citySlug}:{$after}";
 
-        $query = CompanyPg::query()->select([
-            'id', 'url', 'name', 'fantasy', 'cnpj', 'street', 'number',
-            'complement', 'neighborhood', 'zip_code', 'city', 'state',
-            'opening', 'activities', 'situation',
-        ])->where('city_id', $cityId)
-            ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
-            ->orderBy('id')
-            ->limit(10)
-            ->get();
+        $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cityUrl, $state, $after) {
+            $city = CityPg::where('url', $cityUrl)->where('state', $state)->firstOrFail();
+            $cityId = (int) $city->id;
 
-        return response()->json([
-            'city' => $city,
-            'data' => $query,
-            'meta' => [
-                'next_after' => $query->last()?->id,
-                'has_more_pages' => $query->count() === 10,
-            ],
-        ]);
+            $query = CompanyPg::query()->select([
+                'id', 'url', 'name', 'fantasy', 'cnpj', 'street', 'number',
+                'complement', 'neighborhood', 'zip_code', 'city', 'state',
+                'opening', 'activities', 'situation',
+            ])->where('city_id', $cityId)
+                ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
+                ->orderBy('id')
+                ->limit(10)
+                ->get();
+
+            return [
+                'city' => $city,
+                'data' => $query,
+                'meta' => [
+                    'next_after' => $query->last()?->id,
+                    'has_more_pages' => $query->count() === 10,
+                ],
+            ];
+        });
+
+        return $this->cachedJson($result, 86400);
     }
 
     public function cities(): JsonResponse
@@ -122,12 +140,12 @@ class CnpjController extends Controller
     public function bestCities(): JsonResponse
     {
         $cities = Cache::remember('cnpj:featured-cities:v1', now()->addDay(), fn () => CityPg::query()
-                ->select(['id', 'name', 'state', 'url'])
-                ->orderBy('state')
-                ->orderBy('name')
-                ->limit(20)
-                ->get()
-                ->toArray());
+            ->select(['id', 'name', 'state', 'url'])
+            ->orderBy('state')
+            ->orderBy('name')
+            ->limit(20)
+            ->get()
+            ->toArray());
 
         return $this->cachedJson(['data' => $cities], 86400);
     }

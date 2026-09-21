@@ -14,7 +14,9 @@ services:
       APP_DEBUG: "false"
       LOG_CHANNEL: stderr
       # PostgreSQL está no host. Não use o IP público, que pode estar bloqueado pelo firewall.
+      DB_HOST: host.docker.internal
       DB_HOST2: host.docker.internal
+
       CACHE_STORE: file
       SESSION_DRIVER: array
       QUEUE_CONNECTION: sync

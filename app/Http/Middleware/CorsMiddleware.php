@@ -28,6 +28,8 @@ class CorsMiddleware
             '172.17.0.1',  // Docker frontend
             '172.18.0.1',  // Docker networks
             '172.19.0.1',
+            '172.23.0.1',  // Docker network cnpj-internal (host)
+            '172.23.0.3',  // Docker network cnpj-internal (frontend)
             '192.168.1.30', // Host LAN IP
             '147.182.248.223', // Servidor
         ];
@@ -37,14 +39,15 @@ class CorsMiddleware
             env('INTERNAL_API_KEY', 'parafa_api_2024_secure_key'),
         ];
 
-        // Em desenvolvimento, liberar tudo
-        if (app()->environment(['local', 'dev', 'development'])) {
+        // Validação rigorosa em produção
+        $origin = $request->header('origin');
+        $clientIp = $this->getClientIp($request);
+        $apiKey = $request->header('X-API-Key');
+
+        // Em desenvolvimento ou Docker interno, liberar tudo
+        if (app()->environment(['local', 'dev', 'development']) || in_array($clientIp, ['172.23.0.1', '172.23.0.3'])) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
         } else {
-            // Validação rigorosa em produção
-            $origin = $request->header('origin');
-            $clientIp = $this->getClientIp($request);
-            $apiKey = $request->header('X-API-Key');
 
             $authorized = false;
 
@@ -64,15 +67,15 @@ class CorsMiddleware
                 $response->headers->set('Access-Control-Allow-Origin', '*');
             }
 
-            if (!$authorized) {
+            if (! $authorized) {
                 return response()->json([
                     'error' => 'Acesso não autorizado',
                     'message' => 'Esta API só aceita requisições de origens autorizadas',
                     'debug' => [
                         'origin' => $origin,
                         'ip' => $clientIp,
-                        'has_api_key' => !empty($apiKey)
-                    ]
+                        'has_api_key' => ! empty($apiKey),
+                    ],
                 ], 403);
             }
         }
@@ -101,13 +104,14 @@ class CorsMiddleware
             'HTTP_X_CLUSTER_CLIENT_IP',
             'HTTP_FORWARDED_FOR',
             'HTTP_FORWARDED',
-            'REMOTE_ADDR'
+            'REMOTE_ADDR',
         ];
 
         foreach ($ipHeaders as $header) {
             $ip = $request->server($header);
-            if (!empty($ip) && $ip !== 'unknown') {
+            if (! empty($ip) && $ip !== 'unknown') {
                 $ip = explode(',', $ip)[0];
+
                 return trim($ip);
             }
         }
