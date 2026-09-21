@@ -105,12 +105,6 @@ class CnpjController extends Controller
     {
         $cities = CityPg::query()
             ->select(['id', 'name', 'state', 'url'])
-            ->selectSub(
-                CompanyPg::query()
-                    ->selectRaw('count(*)')
-                    ->whereRaw('companies.city_id::text = cities.id'),
-                'companies_count'
-            )
             ->orderBy('state')
             ->orderBy('name')
             ->get();
@@ -120,17 +114,25 @@ class CnpjController extends Controller
 
     public function bestCities(): JsonResponse
     {
-        $cities = CityPg::query()
-            ->select(['id', 'name', 'state', 'url'])
-            ->selectSub(
-                CompanyPg::query()
-                    ->selectRaw('count(*)')
-                    ->whereRaw('companies.city_id::text = cities.id'),
-                'companies_count'
-            )
+        $counts = CompanyPg::query()
+            ->selectRaw('city_id, count(*) as companies_count')
+            ->whereNotNull('city_id')
+            ->groupBy('city_id')
             ->orderByDesc('companies_count')
             ->limit(20)
-            ->get();
+            ->get()
+            ->keyBy(fn ($row) => (string) $row->city_id);
+
+        $cities = CityPg::query()
+            ->select(['id', 'name', 'state', 'url'])
+            ->whereIn('id', $counts->keys()->all())
+            ->get()
+            ->map(function ($city) use ($counts) {
+                $city->companies_count = (int) ($counts[(string) $city->id]->companies_count ?? 0);
+                return $city;
+            })
+            ->sortByDesc('companies_count')
+            ->values();
 
         return response()->json(['data' => $cities]);
     }
