@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CityPg;
 use App\Models\CompanyPg;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -13,7 +14,7 @@ class CnpjController extends Controller
     public function companies(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'search' => 'sometimes|string|max:120',
+            'search' => 'sometimes|string|min:3|max:120',
             'city' => 'sometimes|string|max:120',
             'state' => 'sometimes|string|size:2',
             'city_id' => 'sometimes|string|max:40',
@@ -28,12 +29,17 @@ class CnpjController extends Controller
         ])->orderByDesc('id');
 
         if (isset($validated['search'])) {
-            $search = $validated['search'];
-            $query->where(function ($companyQuery) use ($search) {
-                $companyQuery->where('cnpj', 'ilike', "%{$search}%")
-                    ->orWhere('name', 'ilike', "%{$search}%")
-                    ->orWhere('fantasy', 'ilike', "%{$search}%");
-            });
+            $search = trim($validated['search']);
+            $cnpj = preg_replace('/\D/', '', $search);
+
+            if (strlen($cnpj) === 14) {
+                $query->where('cnpj', $cnpj);
+            } else {
+                $query->where(function ($companyQuery) use ($search) {
+                    $companyQuery->where('name', 'ilike', "%{$search}%")
+                        ->orWhere('fantasy', 'ilike', "%{$search}%");
+                });
+            }
         }
 
         $query->when(isset($validated['city']), fn ($q) => $q->where('city', 'ilike', $validated['city']))
@@ -103,37 +109,33 @@ class CnpjController extends Controller
 
     public function cities(): JsonResponse
     {
-        $cities = CityPg::query()
+        $cities = Cache::remember('cnpj:cities:v1', now()->addDay(), fn () => CityPg::query()
             ->select(['id', 'name', 'state', 'url'])
             ->orderBy('state')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->toArray());
 
-        return response()->json(['data' => $cities]);
+        return $this->cachedJson(['data' => $cities], 86400);
     }
 
     public function bestCities(): JsonResponse
     {
-        $counts = CompanyPg::query()
-            ->selectRaw('city_id, count(*) as companies_count')
-            ->whereNotNull('city_id')
-            ->groupBy('city_id')
-            ->orderByDesc('companies_count')
-            ->limit(20)
-            ->get()
-            ->keyBy(fn ($row) => (string) $row->city_id);
+        $cities = Cache::remember('cnpj:featured-cities:v1', now()->addDay(), fn () => CityPg::query()
+                ->select(['id', 'name', 'state', 'url'])
+                ->orderBy('state')
+                ->orderBy('name')
+                ->limit(20)
+                ->get()
+                ->toArray());
 
-        $cities = CityPg::query()
-            ->select(['id', 'name', 'state', 'url'])
-            ->whereIn('id', $counts->keys()->all())
-            ->get()
-            ->map(function ($city) use ($counts) {
-                $city->companies_count = (int) ($counts[(string) $city->id]->companies_count ?? 0);
-                return $city;
-            })
-            ->sortByDesc('companies_count')
-            ->values();
+        return $this->cachedJson(['data' => $cities], 86400);
+    }
 
-        return response()->json(['data' => $cities]);
+    private function cachedJson(array $payload, int $maxAge): JsonResponse
+    {
+        return response()
+            ->json($payload)
+            ->header('Cache-Control', "public, max-age=60, s-maxage={$maxAge}, stale-while-revalidate=60");
     }
 }
