@@ -23,7 +23,7 @@ Route::middleware('api')->group(function () {
     Route::get('/cidades/{id}', [CityController::class, 'show']);
     Route::get('/estados', [CityController::class, 'states']);
 
-    Route::prefix('cnpj')->middleware('throttle:30,1')->group(function () {
+    Route::prefix('cnpj')->group(function () {
         Route::get('/companies', [CnpjController::class, 'companies']);
         Route::get('/companies/{cnpj}', [CnpjController::class, 'company']);
         Route::get('/cities/{citySlug}', [CnpjController::class, 'city']);

@@ -4,13 +4,12 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\IpUtils;
 
 class CorsMiddleware
 {
     public function handle(Request $request, Closure $next)
     {
-        $response = $next($request);
-
         // Origens permitidas
         $allowedOrigins = [
             'https://parafa.com.br',
@@ -44,9 +43,16 @@ class CorsMiddleware
         $clientIp = $this->getClientIp($request);
         $apiKey = $request->header('X-API-Key');
 
-        // Em desenvolvimento ou Docker interno, liberar tudo
-        if (app()->environment(['local', 'dev', 'development']) || in_array($clientIp, ['172.23.0.1', '172.23.0.2', '172.23.0.3'])) {
-            $response->headers->set('Access-Control-Allow-Origin', '*');
+        // Os endereços da rede Docker mudam a cada deploy.
+        $remoteIp = $request->server('REMOTE_ADDR', '');
+        $internalPeer = $remoteIp && IpUtils::checkIp($remoteIp, [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+        ]);
+
+        if (app()->environment(['local', 'dev', 'development']) || $internalPeer) {
+            $allowedOrigin = '*';
         } else {
 
             $authorized = false;
@@ -54,17 +60,17 @@ class CorsMiddleware
             // 1. Verificar API Key
             if ($apiKey && in_array($apiKey, $validApiKeys)) {
                 $authorized = true;
-                $response->headers->set('Access-Control-Allow-Origin', $origin ?: '*');
+                $allowedOrigin = $origin ?: '*';
             }
             // 2. Verificar Origin
             elseif ($origin && in_array($origin, $allowedOrigins)) {
                 $authorized = true;
-                $response->headers->set('Access-Control-Allow-Origin', $origin);
+                $allowedOrigin = $origin;
             }
             // 3. Verificar IP (para requisições diretas)
             elseif (in_array($clientIp, $allowedIps)) {
                 $authorized = true;
-                $response->headers->set('Access-Control-Allow-Origin', '*');
+                $allowedOrigin = '*';
             }
 
             if (! $authorized) {
@@ -80,13 +86,13 @@ class CorsMiddleware
             }
         }
 
+        // Não consulte o banco para uma requisição que será recusada.
+        $response = $request->isMethod('OPTIONS') ? response()->json([], 200) : $next($request);
+
+        $response->headers->set('Access-Control-Allow-Origin', $allowedOrigin);
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-API-Key');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
-
-        if ($request->isMethod('OPTIONS')) {
-            return response()->json([], 200);
-        }
 
         return $response;
     }
@@ -96,26 +102,6 @@ class CorsMiddleware
      */
     private function getClientIp(Request $request): string
     {
-        $ipHeaders = [
-            'HTTP_CF_CONNECTING_IP',
-            'HTTP_CLIENT_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_FORWARDED',
-            'HTTP_X_CLUSTER_CLIENT_IP',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-            'REMOTE_ADDR',
-        ];
-
-        foreach ($ipHeaders as $header) {
-            $ip = $request->server($header);
-            if (! empty($ip) && $ip !== 'unknown') {
-                $ip = explode(',', $ip)[0];
-
-                return trim($ip);
-            }
-        }
-
         return $request->ip();
     }
 }
