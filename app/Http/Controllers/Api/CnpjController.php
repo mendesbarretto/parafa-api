@@ -22,7 +22,7 @@ class CnpjController extends Controller
             'page' => 'sometimes|integer|min:1',
         ]);
 
-        $cacheKey = 'cnpj:companies:'.md5(json_encode($validated));
+        $cacheKey = 'cnpj:companies:v2:'.md5(json_encode($validated));
 
         $result = Cache::remember($cacheKey, now()->addHours(12), function () use ($validated) {
             $query = CompanyPg::query()->select([
@@ -52,7 +52,7 @@ class CnpjController extends Controller
             $companies = $query->simplePaginate($validated['per_page'] ?? 20);
 
             return [
-                'data' => $companies->items(),
+                'data' => $companies->getCollection()->toArray(),
                 'meta' => [
                     'current_page' => $companies->currentPage(),
                     'per_page' => $companies->perPage(),
@@ -66,7 +66,7 @@ class CnpjController extends Controller
 
     public function company(string $cnpj): JsonResponse
     {
-        $cacheKey = "cnpj:company:{$cnpj}";
+        $cacheKey = "cnpj:company:v2:{$cnpj}";
 
         $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cnpj) {
             $company = CompanyPg::with(['legalNature', 'activity'])
@@ -82,8 +82,8 @@ class CnpjController extends Controller
                 ->get();
 
             return [
-                'data' => $company,
-                'related' => $related,
+                'data' => $company->toArray(),
+                'related' => $related->toArray(),
             ];
         });
 
@@ -96,7 +96,7 @@ class CnpjController extends Controller
         $cityUrl = substr($citySlug, 0, -3);
         $after = $request->integer('after', 0);
 
-        $cacheKey = "cnpj:city:{$citySlug}:{$after}";
+        $cacheKey = "cnpj:city:v2:{$citySlug}:{$after}";
 
         $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cityUrl, $state, $after) {
             $city = CityPg::where('url', $cityUrl)->where('state', $state)->firstOrFail();
@@ -113,8 +113,8 @@ class CnpjController extends Controller
                 ->get();
 
             return [
-                'city' => $city,
-                'data' => $query,
+                'city' => $city->toArray(),
+                'data' => $query->toArray(),
                 'meta' => [
                     'next_after' => $query->last()?->id,
                     'has_more_pages' => $query->count() === 10,
