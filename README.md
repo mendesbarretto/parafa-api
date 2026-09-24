@@ -56,3 +56,44 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+
+## Solicitações do diretório CNPJ
+
+As novas tabelas ficam no PostgreSQL CNPJ (`pgsql2`). A migration não remove cadastros existentes:
+
+```sh
+php artisan migrate --path=database/migrations/2026_09_23_204634_create_cnpj_privacy_tables.php --force
+```
+
+Configurar `CNPJ_SITE_URL` e um transporte SMTP real antes da publicação. O formulário envia confirmação com token aleatório, armazenado como hash; o link de confirmação vence em 24 horas e o acompanhamento fica disponível por 30 dias. E-mail confirmado apenas encaminha para análise. O operador deve verificar o vínculo do solicitante antes da decisão.
+
+O comando abaixo lista pedidos confirmados pendentes. Informando um protocolo, mostra os dados para análise em terminal restrito:
+
+```sh
+php artisan cnpj:requests
+php artisan cnpj:requests PROTOCOLO
+```
+
+Depois da análise, registrar a decisão e sua justificativa:
+
+```sh
+php artisan cnpj:requests PROTOCOLO --decision=approve --reviewer="OPERADOR" --notes="Vínculo e pedido verificados pelo atendimento."
+php artisan cnpj:requests PROTOCOLO --decision=reject --reviewer="OPERADOR" --notes="Motivo da decisão."
+```
+
+`approve` aplica apenas a pedidos de remoção: registra o CNPJ em `cnpj_suppressions`, sem apagar o cadastro de origem. Todas as consultas públicas do modelo excluem essa lista, incluindo novas importações da mesma empresa. **Não truncar a tabela de supressões nas importações**. Preservar também supressões e históricos de exclusão anteriores em qualquer recarga completa da base.
+
+Para correções, atualizar os dados após a análise e então registrar `--decision=resolve`, com operador e justificativa. Essa decisão invalida as consultas em cache. O comando não altera automaticamente os campos enviados como texto livre pelo solicitante.
+
+Os pedidos não têm uma tela administrativa pública. O atendimento consulta a fila pelo comando, e o solicitante acompanha o resultado pelo link recebido. `review_notes` e dados pessoais não aparecem na API pública de acompanhamento.
+
+Os endpoints públicos usam cache interno do Laravel e respostas HTTP `private, no-store`. Não sobrepor esses cabeçalhos com cache de CDN. Ao publicar, purgar HTML e respostas da API que ficaram no cache da versão anterior.
+
+Testes das alterações:
+
+```sh
+php artisan test --compact tests/Feature/CnpjCacheTest.php tests/Feature/CnpjPrivacyTest.php tests/Feature/CnpjSitemapTest.php
+```
+
+Os testes usam SQLite em memória e e-mails falsos; requerem a extensão PHP `pdo_sqlite`.

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CityPg;
+use App\Models\CnpjSuppression;
 use App\Models\CompanyPg;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,7 @@ class CnpjController extends Controller
             'page' => 'sometimes|integer|min:1',
         ]);
 
-        $cacheKey = 'cnpj:companies:v2:'.md5(json_encode($validated));
+        $cacheKey = 'cnpj:companies:v3:'.CnpjSuppression::cacheVersion().':'.md5(json_encode($validated));
 
         $result = Cache::remember($cacheKey, now()->addHours(12), function () use ($validated) {
             $query = CompanyPg::query()->select([
@@ -33,9 +34,9 @@ class CnpjController extends Controller
 
             if (isset($validated['search'])) {
                 $search = trim($validated['search']);
-                $cnpj = preg_replace('/\D/', '', $search);
+                $cnpj = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $search));
 
-                if (strlen($cnpj) === 14) {
+                if (preg_match('/^[A-Z0-9]{12}[0-9]{2}$/', $cnpj)) {
                     $query->where('cnpj', $cnpj);
                 } else {
                     $query->where(function ($companyQuery) use ($search) {
@@ -66,10 +67,10 @@ class CnpjController extends Controller
 
     public function company(string $cnpj): JsonResponse
     {
-        $cacheKey = "cnpj:company:v2:{$cnpj}";
+        $cacheKey = "cnpj:company:v3:{$cnpj}:".CnpjSuppression::cacheVersion();
 
         $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cnpj) {
-            $company = CompanyPg::with(['legalNature', 'activity'])
+            $company = CompanyPg::with(['legalNature', 'activity', 'secondaryActivities.activities'])
                 ->where('cnpj', $cnpj)
                 ->firstOrFail();
 
@@ -96,7 +97,7 @@ class CnpjController extends Controller
         $cityUrl = substr($citySlug, 0, -3);
         $after = $request->integer('after', 0);
 
-        $cacheKey = "cnpj:city:v2:{$citySlug}:{$after}";
+        $cacheKey = "cnpj:city:v3:{$citySlug}:{$after}:".CnpjSuppression::cacheVersion();
 
         $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cityUrl, $state, $after) {
             $city = CityPg::where('url', $cityUrl)->where('state', $state)->firstOrFail();
@@ -109,15 +110,15 @@ class CnpjController extends Controller
             ])->where('city_id', $cityId)
                 ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
                 ->orderBy('id')
-                ->limit(10)
+                ->limit(21)
                 ->get();
 
             return [
                 'city' => $city->toArray(),
-                'data' => $query->toArray(),
+                'data' => $query->take(20)->values()->toArray(),
                 'meta' => [
-                    'next_after' => $query->last()?->id,
-                    'has_more_pages' => $query->count() === 10,
+                    'next_after' => $query->take(20)->last()?->id,
+                    'has_more_pages' => $query->count() > 20,
                 ],
             ];
         });
@@ -154,6 +155,6 @@ class CnpjController extends Controller
     {
         return response()
             ->json($payload)
-            ->header('Cache-Control', "public, max-age=60, s-maxage={$maxAge}, stale-while-revalidate=60");
+            ->header('Cache-Control', 'private, no-store');
     }
 }
