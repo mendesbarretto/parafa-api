@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Mail\CnpjCorrectionRequested;
 use App\Mail\CnpjRequestConfirmation;
 use App\Models\CnpjRequest;
+use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Tests\Concerns\CreatesCnpjData;
@@ -36,7 +38,7 @@ class CnpjPrivacyTest extends TestCase
         return $credentials;
     }
 
-    public function test_creates_request_and_confirmation_only_queues_review(): void
+    public function test_creates_request_and_confirmation_schedules_removal_without_hiding_immediately(): void
     {
         $this->createCompanyData();
         $credentials = $this->submitRequest();
@@ -47,7 +49,7 @@ class CnpjPrivacyTest extends TestCase
         $this->assertSame('pending_email', $entry->fresh()->status);
 
         $this->postJson('/api/cnpj/requests/'.$entry->id.'/confirm', ['token' => $credentials['token']])
-            ->assertOk()->assertExactJson(['protocol' => $entry->id, 'status' => 'pending_review']);
+            ->assertOk()->assertExactJson(['protocol' => $entry->id, 'status' => 'scheduled_removal']);
         $this->assertNotNull($entry->fresh()->verified_at);
         $this->getJson('/api/cnpj/companies/16410532000137')->assertOk();
         $this->assertDatabaseCount('cnpj_suppressions', 0, 'pgsql2');
@@ -164,6 +166,86 @@ class CnpjPrivacyTest extends TestCase
             'relationship' => 'responsavel', 'action' => 'removal', 'message' => 'Solicito revisão dos dados publicados.', 'acknowledged' => true,
         ])->assertServiceUnavailable()->assertJsonPath('message', 'Não foi possível enviar a confirmação. Tente novamente mais tarde.');
         $this->assertDatabaseCount('cnpj_requests', 0, 'pgsql2');
+    }
+
+    public function test_removal_runs_only_after_one_hour_and_confirmation_replay_does_not_reset_timer(): void
+    {
+        $this->freezeTime();
+        $this->createCompanyData();
+        $credentials = $this->submitRequest();
+        $url = '/api/cnpj/requests/'.$credentials['id'].'/confirm';
+        $this->postJson($url, ['token' => $credentials['token']])->assertJsonPath('status', 'scheduled_removal');
+        $verifiedAt = CnpjRequest::findOrFail($credentials['id'])->verified_at->toISOString();
+        $this->travel(59)->minutes();
+        $this->travel(59)->seconds();
+        $this->postJson($url, ['token' => $credentials['token']])->assertOk();
+        $this->assertSame($verifiedAt, CnpjRequest::findOrFail($credentials['id'])->verified_at->toISOString());
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->getJson('/api/cnpj/companies/16410532000137')->assertOk();
+        $this->travel(1)->seconds();
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->getJson('/api/cnpj/companies/16410532000137')->assertNotFound();
+        $this->assertDatabaseHas('cnpj_requests', ['id' => $credentials['id'], 'status' => 'removed', 'reviewed_by' => 'automatic'], 'pgsql2');
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->assertDatabaseCount('cnpj_suppressions', 1, 'pgsql2');
+    }
+
+    public function test_unconfirmed_and_rejected_requests_are_not_removed_by_scheduler(): void
+    {
+        $this->freezeTime();
+        $this->createCompanyData();
+        $credentials = $this->submitRequest();
+        $this->travel(2)->hours();
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->getJson('/api/cnpj/companies/16410532000137')->assertOk();
+        $this->postJson('/api/cnpj/requests/'.$credentials['id'].'/confirm', ['token' => $credentials['token']])->assertOk();
+        $this->artisan('cnpj:requests', ['id' => $credentials['id'], '--decision' => 'reject', '--reviewer' => 'Equipe', '--notes' => 'Cancelamento solicitado.'])->assertSuccessful();
+        $this->travel(2)->hours();
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->assertDatabaseCount('cnpj_suppressions', 0, 'pgsql2');
+    }
+
+    public function test_correction_email_is_sent_to_owner_only_after_confirmation_and_not_repeated(): void
+    {
+        $this->createCompanyData();
+        config(['cnpj.correction_email' => 'mendesbarretto@gmail.com']);
+        $credentials = $this->submitRequest('correction');
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        Mail::assertNotSent(CnpjCorrectionRequested::class);
+        $this->postJson('/api/cnpj/requests/'.$credentials['id'].'/confirm', ['token' => $credentials['token']])->assertJsonPath('status', 'pending_review');
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        Mail::assertSent(CnpjCorrectionRequested::class, 1);
+        Mail::assertSent(CnpjCorrectionRequested::class, fn ($mail): bool => $mail->hasTo('mendesbarretto@gmail.com') && $mail->request->cnpj === '16410532000137'
+            && $mail->request->message === 'Solicito revisão dos dados publicados.');
+        $this->assertNotNull(CnpjRequest::findOrFail($credentials['id'])->correction_notified_at);
+        $this->assertDatabaseCount('cnpj_suppressions', 0, 'pgsql2');
+    }
+
+    public function test_failed_correction_notification_is_retried_without_losing_request(): void
+    {
+        $this->createCompanyData();
+        config(['cnpj.correction_email' => 'mendesbarretto@gmail.com']);
+        $credentials = $this->submitRequest('correction');
+        $this->postJson('/api/cnpj/requests/'.$credentials['id'].'/confirm', ['token' => $credentials['token']])->assertOk();
+        Mail::shouldReceive('to')->with('mendesbarretto@gmail.com')->once()->andThrow(new \RuntimeException('SMTP unavailable'));
+        $this->artisan('cnpj:process-requests')->assertFailed();
+        $this->assertNull(CnpjRequest::findOrFail($credentials['id'])->correction_notified_at);
+        Mail::swap(new MailManager($this->app));
+        Mail::fake();
+        $this->artisan('cnpj:process-requests')->assertSuccessful();
+        Mail::assertSent(CnpjCorrectionRequested::class, 1);
+        $this->assertNotNull(CnpjRequest::findOrFail($credentials['id'])->correction_notified_at);
+    }
+
+    public function test_correction_mail_escapes_message_and_uses_requester_as_reply_to(): void
+    {
+        $entry = new CnpjRequest(['name' => 'Responsável', 'email' => 'responsavel@example.test', 'cnpj' => '16410532000137', 'message' => '<script>alert(1)</script>']);
+        $mail = new CnpjCorrectionRequested($entry);
+        $this->assertSame('responsavel@example.test', $mail->envelope()->replyTo[0]->address);
+        $html = $mail->render();
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString('<script>', $html);
     }
 
     public function test_mail_template_escapes_url_and_protocol(): void

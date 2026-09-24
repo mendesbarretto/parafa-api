@@ -16,7 +16,7 @@ class ReviewCnpjRequest extends Command
     public function handle(): int
     {
         if (! $this->argument('id')) {
-            $this->table(['Protocolo', 'CNPJ', 'Ação', 'Confirmado em'], CnpjRequest::where('status', 'pending_review')
+            $this->table(['Protocolo', 'CNPJ', 'Ação', 'Confirmado em'], CnpjRequest::whereIn('status', ['pending_review', 'scheduled_removal'])
                 ->oldest()->limit(100)->get(['id', 'cnpj', 'action', 'verified_at'])->toArray());
 
             return self::SUCCESS;
@@ -46,7 +46,7 @@ class ReviewCnpjRequest extends Command
 
         return DB::connection('pgsql2')->transaction(function () use ($entry, $decision): int {
             $entry = CnpjRequest::whereKey($entry->id)->lockForUpdate()->firstOrFail();
-            if ($entry->status !== 'pending_review' || ! $entry->verified_at) {
+            if (! in_array($entry->status, ['pending_review', 'scheduled_removal'], true) || ! $entry->verified_at) {
                 $this->error('Somente pedidos confirmados e pendentes podem ser analisados.');
 
                 return self::FAILURE;

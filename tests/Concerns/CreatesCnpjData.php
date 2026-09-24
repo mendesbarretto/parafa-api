@@ -12,6 +12,7 @@ trait CreatesCnpjData
     {
         $schema = Schema::connection('pgsql2');
         (require database_path('migrations/2026_09_23_204634_create_cnpj_privacy_tables.php'))->up();
+        (require database_path('migrations/2026_09_24_144445_add_correction_notified_at_to_cnpj_requests_table.php'))->up();
         $schema->create('secondary_activities', function (Blueprint $table): void {
             $table->integer('company_id');
             $table->integer('activity_id');

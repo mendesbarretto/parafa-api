@@ -64,9 +64,14 @@ As novas tabelas ficam no PostgreSQL CNPJ (`pgsql2`). A migration não remove ca
 
 ```sh
 php artisan migrate --path=database/migrations/2026_09_23_204634_create_cnpj_privacy_tables.php --force
+php artisan migrate --path=database/migrations/2026_09_24_144445_add_correction_notified_at_to_cnpj_requests_table.php --force
 ```
 
-Configurar `CNPJ_SITE_URL` e um transporte SMTP real antes da publicação. O formulário envia confirmação com token aleatório, armazenado como hash; o link de confirmação vence em 24 horas e o acompanhamento fica disponível por 30 dias. E-mail confirmado apenas encaminha para análise. O operador deve verificar o vínculo do solicitante antes da decisão.
+Configurar `CNPJ_SITE_URL` e um transporte SMTP real antes da publicação. O formulário envia confirmação com token aleatório, armazenado como hash; o link de confirmação vence em 24 horas e o acompanhamento fica disponível por 30 dias. Após a confirmação, remoções ficam agendadas por uma hora; alterações são encaminhadas por e-mail ao responsável definido em `CNPJ_CORRECTION_EMAIL` (padrão: `mendesbarretto@gmail.com`). A confirmação repetida não reinicia o prazo.
+
+O Compose inclui o serviço `scheduler`, que executa `php artisan schedule:work`. O comando `cnpj:process-requests` roda a cada minuto: remove pedidos cujo prazo de uma hora venceu e envia notificações de alteração confirmadas. Em falha de SMTP, mantém o pedido para nova tentativa. Em hospedagem sem Docker, manter o scheduler do Laravel ativo. Não executar o processador manualmente na base real apenas para testar.
+
+A remoção retira o cadastro do site e registra o bloqueio em `cnpj_suppressions`, impedindo republicação em importações futuras.
 
 O comando abaixo lista pedidos confirmados pendentes. Informando um protocolo, mostra os dados para análise em terminal restrito:
 
@@ -75,7 +80,7 @@ php artisan cnpj:requests
 php artisan cnpj:requests PROTOCOLO
 ```
 
-Depois da análise, registrar a decisão e sua justificativa:
+O processamento automático não exige aprovação manual. Para uma intervenção administrativa, registrar a decisão e sua justificativa (uma aprovação manual pode antecipar a remoção):
 
 ```sh
 php artisan cnpj:requests PROTOCOLO --decision=approve --reviewer="OPERADOR" --notes="Vínculo e pedido verificados pelo atendimento."
@@ -86,7 +91,7 @@ php artisan cnpj:requests PROTOCOLO --decision=reject --reviewer="OPERADOR" --no
 
 Para correções, atualizar os dados após a análise e então registrar `--decision=resolve`, com operador e justificativa. Essa decisão invalida as consultas em cache. O comando não altera automaticamente os campos enviados como texto livre pelo solicitante.
 
-Os pedidos não têm uma tela administrativa pública. O atendimento consulta a fila pelo comando, e o solicitante acompanha o resultado pelo link recebido. `review_notes` e dados pessoais não aparecem na API pública de acompanhamento.
+Os pedidos não têm uma tela administrativa pública. O atendimento recebe os pedidos de alteração por e-mail, pode consultar a fila pelo comando, e o solicitante acompanha o resultado pelo link recebido. `review_notes` e dados pessoais não aparecem na API pública de acompanhamento.
 
 Os endpoints públicos usam cache interno do Laravel e respostas HTTP `private, no-store`. Não sobrepor esses cabeçalhos com cache de CDN. Ao publicar, purgar HTML e respostas da API que ficaram no cache da versão anterior.
 

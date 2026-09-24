@@ -20,5 +20,6 @@ class CnpjRequest extends Model
         'expires_at' => 'datetime',
         'verified_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'correction_notified_at' => 'datetime',
     ];
 }

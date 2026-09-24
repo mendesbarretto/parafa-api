@@ -8,7 +8,7 @@ use Illuminate\Mail\Mailables\Envelope;
 
 class CnpjRequestConfirmation extends Mailable
 {
-    public function __construct(public string $confirmationUrl, public string $protocol) {}
+    public function __construct(public string $confirmationUrl, public string $protocol, public string $action = 'removal') {}
 
     public function envelope(): Envelope
     {

@@ -1,5 +1,5 @@
 services:
-  api:
+  api: &api_service
     container_name: cnpj-parafa-api
     image: ${IMAGE_NAME:-cnpj-parafa-api}:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -33,6 +33,20 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  scheduler:
+    <<: *api_service
+    container_name: cnpj-parafa-scheduler
+    command: ["php", "artisan", "schedule:work"]
+    user: www-data
+    ports: []
+    networks:
+      - cnpj-internal
+    healthcheck:
+      disable: true
+    depends_on:
+      - api
+
 
 networks:
   cnpj-internal:

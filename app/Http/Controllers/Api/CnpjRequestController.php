@@ -55,7 +55,7 @@ class CnpjRequestController extends Controller
 
         $url = rtrim(config('cnpj.site_url'), '/').'/remocao#id='.$entry->id.'&token='.$token;
         try {
-            Mail::to($entry->email)->send(new CnpjRequestConfirmation($url, $entry->id));
+            Mail::to($entry->email)->send(new CnpjRequestConfirmation($url, $entry->id, $entry->action));
         } catch (\Throwable $exception) {
             $entry->delete();
             report($exception);
@@ -76,7 +76,7 @@ class CnpjRequestController extends Controller
             abort_if($entry->created_at->addDays(30)->isPast(), 410, 'Link expirado. Entre em contato com o Parafa.');
             if ($entry->status === 'pending_email') {
                 abort_if($entry->expires_at->isPast(), 410, 'Link expirado. Envie uma nova solicitação.');
-                $entry->update(['verified_at' => now(), 'status' => 'pending_review']);
+                $entry->update(['verified_at' => now(), 'status' => $entry->action === 'removal' ? 'scheduled_removal' : 'pending_review']);
             }
 
             return $entry;
