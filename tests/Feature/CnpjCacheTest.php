@@ -53,6 +53,21 @@ class CnpjCacheTest extends TestCase
         $this->assertSame([], array_values($companyQueries));
     }
 
+    public function test_company_detail_reads_current_data_without_creating_file_cache(): void
+    {
+        $this->createCompanyData();
+        $uri = '/api/cnpj/companies/16410532000137';
+
+        $this->getJson($uri)->assertOk()->assertJsonPath('data.name', 'Empresa de teste');
+
+        DB::connection('pgsql2')->table('companies')
+            ->where('cnpj', '16410532000137')
+            ->update(['name' => 'Empresa atualizada']);
+
+        $this->getJson($uri)->assertOk()->assertJsonPath('data.name', 'Empresa atualizada');
+        $this->assertDirectoryDoesNotExist($this->cacheDirectory);
+    }
+
     #[DataProvider('legacyEndpoints')]
     public function test_ignores_legacy_cache_entries_containing_php_objects(string $uri, string $legacyKey, array $expected): void
     {
@@ -69,17 +84,6 @@ class CnpjCacheTest extends TestCase
     public static function cachedEndpoints(): array
     {
         return [
-            'company and relations' => [
-                '/api/cnpj/companies/16410532000137',
-                [
-                    'data' => [
-                        'cnpj' => '16410532000137', 'name' => 'Empresa de teste',
-                        'legal_nature' => ['name' => 'Associacao'],
-                        'activity' => ['name' => 'Atividade de teste'],
-                    ],
-                    'related' => [['cnpj' => '11111111000191']],
-                ],
-            ],
             'city and company list' => [
                 '/api/cnpj/cities/salvador-ba',
                 ['city' => ['name' => 'Salvador'], 'data' => [['cnpj' => '16410532000137']]],
@@ -96,7 +100,18 @@ class CnpjCacheTest extends TestCase
         $endpoints = self::cachedEndpoints();
 
         return [
-            'company' => [$endpoints['company and relations'][0], 'cnpj:company:16410532000137', $endpoints['company and relations'][1]],
+            'company' => [
+                '/api/cnpj/companies/16410532000137',
+                'cnpj:company:16410532000137',
+                [
+                    'data' => [
+                        'cnpj' => '16410532000137', 'name' => 'Empresa de teste',
+                        'legal_nature' => ['name' => 'Associacao'],
+                        'activity' => ['name' => 'Atividade de teste'],
+                    ],
+                    'related' => [['cnpj' => '11111111000191']],
+                ],
+            ],
             'city' => [$endpoints['city and company list'][0], 'cnpj:city:salvador-ba:0', $endpoints['city and company list'][1]],
             'search' => [$endpoints['search results'][0], 'cnpj:companies:'.md5('{"search":"16410532000137"}'), $endpoints['search results'][1]],
         ];

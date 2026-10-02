@@ -67,28 +67,22 @@ class CnpjController extends Controller
 
     public function company(string $cnpj): JsonResponse
     {
-        $cacheKey = "cnpj:company:v3:{$cnpj}:".CnpjSuppression::cacheVersion();
+        $company = CompanyPg::with(['legalNature', 'activity', 'secondaryActivities.activities'])
+            ->where('cnpj', $cnpj)
+            ->firstOrFail();
 
-        $result = Cache::remember($cacheKey, now()->addDay(), function () use ($cnpj) {
-            $company = CompanyPg::with(['legalNature', 'activity', 'secondaryActivities.activities'])
-                ->where('cnpj', $cnpj)
-                ->firstOrFail();
+        $related = CompanyPg::query()
+            ->select(['id', 'url', 'name', 'fantasy', 'cnpj', 'city', 'state'])
+            ->where('city_id', $company->city_id)
+            ->where('id', '!=', $company->id)
+            ->orderBy('id')
+            ->limit(12)
+            ->get();
 
-            $related = CompanyPg::query()
-                ->select(['id', 'url', 'name', 'fantasy', 'cnpj', 'city', 'state'])
-                ->where('city_id', $company->city_id)
-                ->where('id', '!=', $company->id)
-                ->orderBy('id')
-                ->limit(12)
-                ->get();
-
-            return [
-                'data' => $company->toArray(),
-                'related' => $related->toArray(),
-            ];
-        });
-
-        return $this->cachedJson($result, 86400);
+        return $this->cachedJson([
+            'data' => $company->toArray(),
+            'related' => $related->toArray(),
+        ], 86400);
     }
 
     public function city(string $citySlug, Request $request): JsonResponse
