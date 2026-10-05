@@ -28,6 +28,19 @@ class CnpjSitemapTest extends TestCase
         $this->getJson('/api/cnpj/sitemaps/50001')->assertNotFound();
     }
 
+    public function test_sitemap_page_reflects_company_changes_on_the_next_request(): void
+    {
+        $this->createCompanyData();
+
+        $this->getJson('/api/cnpj/sitemaps/1')->assertJsonPath('data.0.name', 'Empresa de teste');
+
+        DB::connection('pgsql2')->table('companies')
+            ->where('cnpj', '16410532000137')
+            ->update(['name' => 'Empresa atualizada']);
+
+        $this->getJson('/api/cnpj/sitemaps/1')->assertJsonPath('data.0.name', 'Empresa atualizada');
+    }
+
     public function test_city_has_no_extra_page_for_exactly_twenty_companies(): void
     {
         $this->createCompanyData();

@@ -25,9 +25,8 @@ class CnpjSitemapController extends Controller
     {
         abort_unless(ctype_digit($page) && (int) $page >= 1 && (int) $page <= 50000, 404);
         $start = ((int) $page - 1) * self::SHARD_SIZE;
-        $data = Cache::remember('cnpj:sitemap:'.(int) $page.':'.CnpjSuppression::cacheVersion(), 3600,
-            fn (): array => CompanyPg::where('id', '>', $start)->where('id', '<=', $start + self::SHARD_SIZE)
-                ->orderBy('id')->get(['id', 'url', 'cnpj', 'name', 'city', 'state', 'last_update'])->toArray());
+        $data = CompanyPg::where('id', '>', $start)->where('id', '<=', $start + self::SHARD_SIZE)
+            ->orderBy('id')->get(['id', 'url', 'cnpj', 'name', 'city', 'state', 'last_update'])->toArray();
 
         return response()->json(['data' => $data])->header('Cache-Control', 'private, no-store');
     }
