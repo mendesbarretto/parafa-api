@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\CnpjSuppression;
 use App\Models\CompanyPg;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
@@ -14,8 +13,11 @@ class CnpjSitemapController extends Controller
 
     public function index(): JsonResponse
     {
-        $maxId = Cache::remember('cnpj:sitemap:max:'.CnpjSuppression::cacheVersion(), 3600,
-            fn (): int => (int) CompanyPg::max('id'));
+        // Only shard boundaries are cached. Publication filtering belongs to companies(),
+        // otherwise MAX(id) with the suppression anti-join can scan the entire registry.
+        $maxId = Cache::remember('cnpj:sitemap:max:v2', 3600,
+            fn (): int => (int) CompanyPg::withoutGlobalScope('published')
+                ->orderByDesc('id')->toBase()->value('id'));
 
         return response()->json(['pages' => (int) ceil($maxId / self::SHARD_SIZE)])
             ->header('Cache-Control', 'private, no-store');
